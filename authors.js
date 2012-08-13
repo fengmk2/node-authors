@@ -3,6 +3,7 @@ module.exports = {
   nameAndEmail: nameAndEmail
 }
 
+var fs = require('fs')
 var path = require('path')
 var ms = require('ms')
 var async = require('async')
@@ -58,6 +59,7 @@ function lookupGithubLogin(p, print, callback) {
   function onEmail(err, res, data) {
     if (data.user) {
       p.login = data.user.login
+      p.onEmail = true;
       return cb(err, p)
     }
     request(searchURI + encodeURIComponent(p.name), options, onName)
@@ -84,46 +86,90 @@ function toData(ppl) {
 function toMarkdown(p) {
   return '- '
   + '[' + p.name + ' aka `' + p.login + '`]'
-  + '(https://github.com/' + p.login + ')'
+  + '(' + p.url + ')'
 }
 
-function authors(path, print, cb) {
+function toText(p) {
+  return p.name + ' <' + p.email +
+    '> (' + p.url + ')'
+}
+
+function authors(p, print, cb) {
   cb = cb || function (err) { if (err) log(err.stack) }
   log = function log() {
     if (print) console.log.apply(console.log, arguments)
   }
-  process.chdir(path)
+  process.chdir(p)
+  // use AUTHORS file info first
+  var AUTHORS = {}
+  var AUTHORS_FILE = path.join(p, 'AUTHORS')
+  if (fs.existsSync(AUTHORS_FILE)) {
+    var list = fs.readFileSync(AUTHORS_FILE, 'utf-8').split('\n')
+    for (var i = 0; i < list.length; i++) {
+      var author = list[i].trim()
+      if (!author || author[0] === '#') {
+        continue
+      }
+      // `Name <email> (url)` format, where email and url are optional. 
+      var m = /^(.+?)\s+<([^>]+)>\s+\(([^\)]+)\)$/.exec(author)
+      if (m) {
+        AUTHORS[m[2]] = {
+          name: m[1],
+          email: m[2],
+          url: m[3]
+        }
+      }
+    }
+  }
 
-  nameAndEmail(path, function (er, ppl) {
+  // authors -f text
+  var format = process.argv[3] // should be markdown or text
+
+  nameAndEmail(p, function (er, ppl) {
     var list = toData(ppl)
     var tasks = []
 
-    if (print) {
+    if (print && format !== 'text') {
       log('Fetching ' + list.length + ' logins from github based on'
       + ' email/name...')
     }
     list.forEach(function (p) {
-      tasks.push(async.apply(lookupGithubLogin, p, print))
+      tasks.push(async.apply(lookupGithubLogin, p, format !== 'text' && print))
     })
     async.parallel(tasks, function (err, results) {
       var seen = {}
       var uresults = results
         .map(function (p) {
-          if (seen[p.login]) return null
-          seen[p.login] = true
+          if (seen[p.email]) return null
+          seen[p.email] = true
+          if (p.email in AUTHORS) {
+            p = AUTHORS[p.email]
+          }
+          if (!p.url) {
+            p.url = 'https://github.com/' + p.login
+          }
           return p
         })
         .filter(function (p) {
           return p
         })
       if (print) {
-        log('')
-        log('## Contributors')
-        log('Ordered by date of first contribution.')
-        log('[Auto-generated](http://github.com/dtrejo/node-authors) on '
-          + new Date() + '.')
-        log('')
-        log(uresults.map(toMarkdown).join('\n'))
+        if (format === 'text') {
+          log('# Total ' + uresults.length + ' contributors.')
+          log('# Ordered by date of first contribution.')
+          log('# Auto-generated (http://github.com/dtrejo/node-authors) on '
+            + new Date() + '.')
+          log('')
+          log(uresults.map(toText).join('\n'))
+        } else {
+          log('')
+          log('## Contributors')
+          log('Ordered by date of first contribution.')
+          log('[Auto-generated](http://github.com/dtrejo/node-authors) on '
+            + new Date() + '.')
+          log('')
+          log(uresults.map(toMarkdown).join('\n'))
+        }
       }
       cb(err, uresults)
     })
