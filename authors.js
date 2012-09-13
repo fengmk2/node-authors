@@ -85,7 +85,7 @@ function toData(ppl) {
 
 function toMarkdown(p) {
   return '- '
-  + '[' + p.name + ' aka `' + p.login + '`]'
+  + '[' + p.name + (p.login && p.login !== p.name ? ' aka `' + p.login + '`' : '') + ']'
   + '(' + p.url + ')'
 }
 
@@ -157,7 +157,7 @@ function authors(p, print, cb) {
         if (format === 'text') {
           log('# Total ' + uresults.length + ' contributors.')
           log('# Ordered by date of first contribution.')
-          log('# Auto-generated (http://github.com/dtrejo/node-authors) on '
+          log('# Auto-generated (https://github.com/fengmk2/node-authors) on '
             + new Date() + '.')
           log('')
           log(uresults.map(toText).join('\n'))
